@@ -25,8 +25,8 @@ import org.apache.poi.ss.usermodel.WorkbookFactory;
 public class ToCSV {
 
     private Workbook workbook = null;
-    private ArrayList<ArrayList<String>> csvData = null;
-    private int maxRowWidth = 0;
+    private ArrayList<ArrayList<ArrayList<String>>> csvData = null;
+    private ArrayList<Integer> maxRowWidth = null;
     private int formattingConvention = 0;
     private DataFormatter formatter = null;
     private FormulaEvaluator evaluator = null;
@@ -252,7 +252,7 @@ public class ToCSV {
 
             // Save the CSV file away using the newly constricted file name
             // and to the specified directory.
-            this.saveCSVFile(new File(destination, destinationFilename));
+            this.saveCSVFile(destination, destinationFilename);
         }
     }
 
@@ -300,6 +300,7 @@ public class ToCSV {
         Row row;
         int lastRowNum;
         this.csvData = new ArrayList<>();
+        this.maxRowWidth = new ArrayList<>();
 
         System.out.println("Converting files contents to CSV format.");
 
@@ -309,6 +310,8 @@ public class ToCSV {
         // and then iterate through them.
         for(int i = 0; i < numSheets; i++) {
 
+            this.csvData.add(new ArrayList<>());
+            this.maxRowWidth.add(0);
             // Get a reference to a sheet and check to see if it contains
             // any rows.
             sheet = this.workbook.getSheetAt(i);
@@ -323,7 +326,7 @@ public class ToCSV {
                 lastRowNum = sheet.getLastRowNum();
                 for(int j = 0; j <= lastRowNum; j++) {
                     row = sheet.getRow(j);
-                    this.rowToCSV(row);
+                    this.rowToCSV(i, row);
                 }
             }
         }
@@ -339,71 +342,7 @@ public class ToCSV {
      * @throws java.io.IOException Thrown to indicate and error occurred in the
      *                             underylying file system.
      */
-    private void saveCSVFile(File file)
-                                     throws FileNotFoundException, IOException {
-        FileWriter fw;
-        BufferedWriter bw = null;
-        ArrayList<String> line;
-        StringBuffer buffer;
-        String csvLineElement;
-        try {
-
-            System.out.println("Saving the CSV file [" + file.getName() + "]");
-
-            // Open a writer onto the CSV file.
-            fw = new FileWriter(file);
-            bw = new BufferedWriter(fw);
-
-            // Step through the elements of the ArrayList that was used to hold
-            // all of the data recovered from the Excel workbooks' sheets, rows
-            // and cells.
-            for(int i = 0; i < this.csvData.size(); i++) {
-                buffer = new StringBuffer();
-
-                // Get an element from the ArrayList that contains the data for
-                // the workbook. This element will itself be an ArrayList
-                // containing Strings and each String will hold the data recovered
-                // from a single cell. The for() loop is used to recover elements
-                // from this 'row' ArrayList one at a time and to write the Strings
-                // away to a StringBuffer thus assembling a single line for inclusion
-                // in the CSV file. If a row was empty or if it was short, then
-                // the ArrayList that contains it's data will also be shorter than
-                // some of the others. Therefore, it is necessary to check within
-                // the for loop to ensure that the ArrayList contains data to be
-                // processed. If it does, then an element will be recovered and
-                // appended to the StringBuffer.
-                line = this.csvData.get(i);
-                for(int j = 0; j < this.maxRowWidth; j++) {
-                    if(line.size() > j) {
-                        csvLineElement = line.get(j);
-                        if(csvLineElement != null) {
-                            buffer.append(this.escapeEmbeddedCharacters(
-                                    csvLineElement));
-                        }
-                    }
-                    if(j < (this.maxRowWidth - 1)) {
-                        buffer.append(this.separator);
-                    }
-                }
-
-                // Once the line is built, write it away to the CSV file.
-                bw.write(buffer.toString().trim());
-
-                // Condition the inclusion of new line characters so as to
-                // avoid an additional, superfluous, new line at the end of
-                // the file.
-                if(i < (this.csvData.size() - 1)) {
-                    bw.newLine();
-                }
-            }
-        }
-        finally {
-            if(bw != null) {
-                bw.flush();
-                bw.close();
-            }
-        }
-    }
+ 
 
     /**
      * Called to convert a row of cells into a line of data that can later be
@@ -413,7 +352,7 @@ public class ToCSV {
      *            encapsulates information about a row of cells recovered from
      *            an Excel workbook.
      */
-    private void rowToCSV(Row row) {
+    private void rowToCSV(int sheetNum, Row row) {
         Cell cell;
         int lastCellNum;
         ArrayList<String> csvLine = new ArrayList<>();
@@ -445,11 +384,83 @@ public class ToCSV {
             // Make a note of the index number of the right most cell. This value
             // will later be used to ensure that the matrix of data in the CSV file
             // is square.
-            if(lastCellNum > this.maxRowWidth) {
-                this.maxRowWidth = lastCellNum;
+            if(lastCellNum > this.maxRowWidth.get(sheetNum)) {
+                this.maxRowWidth.set(sheetNum, lastCellNum);
             }
         }
-        this.csvData.add(csvLine);
+        this.csvData.get(sheetNum).add(csvLine);
+    }
+    
+    private void saveCSVFile(File destination, String filename)
+            throws FileNotFoundException, IOException {
+        FileWriter fw;
+        BufferedWriter bw = null;
+        ArrayList<String> line;
+        StringBuffer buffer;
+        String csvLineElement;
+
+        for (int sheetNum = 0; sheetNum < this.csvData.size(); sheetNum++) {
+            try {
+
+                ArrayList<ArrayList<String>> sheet = this.csvData.get(sheetNum);
+                // Step through the elements of the ArrayList that was used to hold
+                // all of the data recovered from the Excel workbooks' sheets, rows
+                // and cells.
+
+                File file = new File(destination, "sheet" + sheetNum + "." + filename);
+                System.out.println("Saving the CSV file [" + file.getName() + "]");
+
+                // Open a writer onto the CSV file.
+                fw = new FileWriter(file);
+                bw = new BufferedWriter(fw);
+
+                for (int i = 0; i < sheet.size(); i++) {
+                    buffer = new StringBuffer();
+
+                    // Get an element from the ArrayList that contains the data for
+                    // the workbook. This element will itself be an ArrayList
+                    // containing Strings and each String will hold the data recovered
+                    // from a single cell. The for() loop is used to recover elements
+                    // from this 'row' ArrayList one at a time and to write the Strings
+                    // away to a StringBuffer thus assembling a single line for inclusion
+                    // in the CSV file. If a row was empty or if it was short, then
+                    // the ArrayList that contains it's data will also be shorter than
+                    // some of the others. Therefore, it is necessary to check within
+                    // the for loop to ensure that the ArrayList contains data to be
+                    // processed. If it does, then an element will be recovered and
+                    // appended to the StringBuffer.
+                    line = sheet.get(i);
+                    for (int j = 0; j < this.maxRowWidth.get(sheetNum); j++) {
+                        if (line.size() > j) {
+                            csvLineElement = line.get(j);
+                            if (csvLineElement != null) {
+                                buffer.append(this.escapeEmbeddedCharacters(
+                                        csvLineElement));
+                            }
+                        }
+                        if (j < (this.maxRowWidth.get(sheetNum) - 1)) {
+                            buffer.append(this.separator);
+                        }
+                    }
+
+                    // Once the line is built, write it away to the CSV file.
+                    bw.write(buffer.toString().trim());
+
+                    // Condition the inclusion of new line characters so as to
+                    // avoid an additional, superfluous, new line at the end of
+                    // the file.
+                    if (i < (sheet.size() - 1)) {
+                        bw.newLine();
+                    }
+                }
+            } finally {
+                if (bw != null) {
+                    bw.flush();
+                    bw.close();
+                }
+            }
+        }
+
     }
 
     /**
